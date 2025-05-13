@@ -1,33 +1,45 @@
+# Namnet på din workflow som syns i GitHub Actions
 name: CI Pipeline
 
+# När workflowen ska köras: vid push eller pull request till "main"-grenen
 on:
   push:
     branches:
-      - main  # Körs när det görs en push till 'main' branchen
+      - main
   pull_request:
     branches:
-      - main  # Körs när en pull request görs mot 'main' branchen
+      - main
 
 jobs:
-  test:
-    runs-on: ubuntu-latest  # Pipelines kommer att köras på Ubuntu
+  build-and-test:
+    # Körs på senaste Ubuntu-image som GitHub tillhandahåller
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2  # Hämtar koden från GitHub-repositoryt
+      # 1. Klona koden från repository
+      - name: Check out code
+        uses: actions/checkout@v3
 
+      # 2. Installera JDK 17 (Temurin = Adopts nyare version)
       - name: Set up JDK 17
-        uses: actions/setup-java@v2  # Installerar JDK 17 för att köra Java
+        uses: actions/setup-java@v3
         with:
           java-version: '17'
+          distribution: 'temurin'
 
+      # 3. Cache Maven-dependencies för snabbare builds
       - name: Cache Maven dependencies
-        uses: actions/cache@v2  # Cacherar Maven dependencies för att påskynda byggprocessen
+        uses: actions/cache@v4
         with:
-          path: ~/.m2/repository  # Maven's cache-mapp
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}  # Cache-nyckel baserat på pom.xml
+          path: ~/.m2/repository # Här ligger alla nedladdade beroenden
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Build and run tests
-        run: mvn clean test  # Kommandot som kör Maven-bygget och testerna
+      # 4. Bygg applikationen med Maven
+      - name: Build with Maven
+        run: mvn clean install
+
+      # 5. Kör alla tester (enhet, komponent, integration) med Maven
+      - name: Run tests
+        run: mvn test
