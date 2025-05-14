@@ -1,5 +1,6 @@
 name: CI Pipeline
 
+# Trigger the pipeline on push or pull request events targeting the main branch
 on:
   push:
     branches:
@@ -10,25 +11,34 @@ on:
 
 jobs:
   build-and-test:
+    # Use the latest Ubuntu runner for this job
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧾 Check out code
+      # Check out the repository code into the runner environment
+      - name: Check out repository code
         uses: actions/checkout@v3
 
-      - name: ☕ Set up JDK 17
+      # Set up Java Development Kit (JDK) 17 using Temurin distribution
+      - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🧩 Cache Maven dependencies
+      # Cache Maven dependencies to improve build performance
+      - name: Cache Maven dependencies
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository
+          # Create a unique key based on OS and pom.xml files
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          # Fallback keys for cache restoration
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: 🛠 Build and test with debug flags
+      # Execute Maven build with clean install, including debug flags for troubleshooting
+      - name: Build and test with debug flags
         run: mvn clean install -e -X
+        # -e: Show execution stack traces on errors
+        # -X: Enable debug output for the Maven execution
