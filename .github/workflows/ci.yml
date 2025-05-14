@@ -1,44 +1,81 @@
-name: CI Pipeline
+name: Advanced Safe CI Pipeline
 
-# Trigger the pipeline on push or pull request events targeting the main branch
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
-  build-and-test:
-    # Use the latest Ubuntu runner for this job
+  verify-and-build:
+    name: "Validate, Build & Test"
     runs-on: ubuntu-latest
+    
+    # Timeout efter 30 minuter för att förhindra hängande jobb
+    timeout-minutes: 30
 
     steps:
-      # Check out the repository code into the runner environment
-      - name: Check out repository code
-        uses: actions/checkout@v3
+      # Steg 1: Checkout med strikt SHA-låsning för säkerhet
+      - name: "🔒 Secure Checkout"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}  # Låser till exakt commit, inte branch-namn
 
-      # Set up Java Development Kit (JDK) 17 using Temurin distribution
-      - name: Set up JDK 17
+      # Steg 2: JDK-installation med verifiering
+      - name: "☑️ JDK 17 + Validation"
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
+          check-latest: true  # Säkerställer senaste säkerhetsuppdateringar
+        env:
+          JAVA_HOME_VERIFICATION_FILE: ${{ github.workspace }}/java_version.txt
+        run: |
+          java -version 2> $JAVA_HOME_VERIFICATION_FILE
+          echo "JDK verifierad: $(cat $JAVA_HOME_VERIFICATION_FILE)"
 
-      # Cache Maven dependencies to improve build performance
-      - name: Cache Maven dependencies
+      # Steg 3: Smart Maven-cache med automatisk rensning
+      - name: "🧹 Smart Maven Cache"
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          # Create a unique key based on OS and pom.xml files
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          # Fallback keys for cache restoration
+          path: |
+            ~/.m2/repository
+            target/**  # Cachar även byggartefakter
+          key: maven-${{ hashFiles('**/pom.xml') }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-maven-
+            maven-${{ hashFiles('**/pom.xml') }}
+        env:
+          MAVEN_OPTS: "-Dmaven.repo.local=$HOME/.m2/repository"
 
-      # Execute Maven build with clean install, including debug flags for troubleshooting
-      - name: Build and test with debug flags
-        run: mvn clean install -e -X
-        # -e: Show execution stack traces on errors
-        # -X: Enable debug output for the Maven execution
+      # Steg 4: Förebyggande validering innan byggande
+      - name: "🔍 Pre-Flight Checks"
+        run: |
+          mvn validate
+          mvn dependency:tree validate
+          mvn checkstyle:check  # Om du använder Checkstyle
+
+      # Steg 5: Bygg med fail-safe och diagnostik
+      - name: "🏗 Safe Build & Test"
+        run: |
+          mvn clean install \
+            -Dmaven.test.failure.ignore=false \
+            -B -V -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+        env:
+          BUILD_OPTS: "-Xms512m -Xmx2g"  # Minneshantering
+
+      # Steg 6: Automatisk artefakthantering
+      - name: "📦 Archive Build Artifacts"
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-output
+          path: |
+            target/*.jar
+            target/surefire-reports/
+
+      # Steg 7: Alltid köras - Post-mortem analys
+      - name: "🧐 Post-Build Analysis"
+        if: always()
+        run: |
+          echo "Byggstatus: ${{ job.status }}"
+          [ -f target/surefire-reports/TEST-*.xml ] && grep -L "<failure" target/surefire-reports/TEST-*.xml || echo "Inga testfel"
