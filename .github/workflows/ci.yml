@@ -1,7 +1,5 @@
-# Namn på workflow som kommer att visas i GitHub Actions
-name: CI Pipeline
+name: Advanced CI Pipeline
 
-# Workflow triggas automatiskt vid push eller pull request till main-branchen
 on:
   push:
     branches:
@@ -11,41 +9,50 @@ on:
       - main
 
 jobs:
-  build-and-test:
-    # Kör jobben på en virtuell Ubuntu-maskin som tillhandahålls av GitHub
+  build:
+    name: Build and Test on Java ${{ matrix.java }}
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        java: [17, 21]  # Test with both Java 17 and 21
+      fail-fast: true  # Stop the matrix if one job fails
+
     steps:
-      # Klonar ner hela GitHub-repot till den virtuella miljön
-      - name: Check out repository code
+      # Step 1: Checkout the code
+      - name: Check out code
         uses: actions/checkout@v3
 
-      # Installerar Java JDK version 17 via Temurin-distributionen
-      - name: Set up JDK 17
+      # Step 2: Set up Java using matrix value
+      - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
+          cache: maven
 
-      # Visar vilken Java-version som är installerad (för att verifiera att rätt version används)
-      - name: Verify Java version
-        run: java -version
+      # Step 3: Show Java and Maven versions
+      - name: Show environment versions
+        run: |
+          java -version
+          mvn -v
 
-      # Visar vilken Maven-version som används i pipeline (kan hjälpa vid felsökning)
-      - name: Verify Maven version
-        run: mvn -v
+      # Step 4: Build and run tests (cleanly split steps)
+      - name: Compile code and run unit tests
+        run: mvn clean verify -B
 
-      # Cachar Maven-dependencies för att snabba upp framtida builds (så Maven inte behöver ladda ner allt varje gång)
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
+      # Step 5: Upload test reports
+      - name: Publish JUnit test results
+        if: always()  # Run even if previous step fails
+        uses: actions/upload-artifact@v3
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+          name: junit-test-results
+          path: target/surefire-reports/
 
-      # Kör byggprocessen med Maven: clean (rensa gamla filer) + install (kompilera, köra tester, paketera)
-      # Flaggan -e visar fullständig felstacktrace vid fel
-      # Flaggan -X aktiverar debug-läge för mer detaljerad loggning
-      - name: Build and test with debug flags
-        run: mvn clean install -e -X
+      # Step 6: Optionally upload JAR or other output
+      - name: Upload built artifact
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: todoapp-artifact
+          path: target/*.jar
