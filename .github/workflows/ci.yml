@@ -1,81 +1,51 @@
-name: Advanced Safe CI Pipeline
+# Namn på workflow som kommer att visas i GitHub Actions
+name: CI Pipeline
 
+# Workflow triggas automatiskt vid push eller pull request till main-branchen
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
-  verify-and-build:
-    name: "Validate, Build & Test"
+  build-and-test:
+    # Kör jobben på en virtuell Ubuntu-maskin som tillhandahålls av GitHub
     runs-on: ubuntu-latest
-    
-    # Timeout efter 30 minuter för att förhindra hängande jobb 
-    timeout-minutes: 30
 
     steps:
-      # Steg 1: Checkout med strikt SHA-låsning för säkerhet
-      - name: "🔒 Secure Checkout"
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}  # Låser till exakt commit, inte branch-namn
+      # Klonar ner hela GitHub-repot till den virtuella miljön
+      - name: Check out repository code
+        uses: actions/checkout@v3
 
-      # Steg 2: JDK-installation med verifiering
-      - name: "☑️ JDK 17 + Validation"
+      # Installerar Java JDK version 17 via Temurin-distributionen
+      - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
-          check-latest: true  # Säkerställer senaste säkerhetsuppdateringar
-        env:
-          JAVA_HOME_VERIFICATION_FILE: ${{ github.workspace }}/java_version.txt
-        run: |
-          java -version 2> $JAVA_HOME_VERIFICATION_FILE
-          echo "JDK verifierad: $(cat $JAVA_HOME_VERIFICATION_FILE)"
 
-      # Steg 3: Smart Maven-cache med automatisk rensning
-      - name: "🧹 Smart Maven Cache"
+      # Visar vilken Java-version som är installerad (för att verifiera att rätt version används)
+      - name: Verify Java version
+        run: java -version
+
+      # Visar vilken Maven-version som används i pipeline (kan hjälpa vid felsökning)
+      - name: Verify Maven version
+        run: mvn -v
+
+      # Cachar Maven-dependencies för att snabba upp framtida builds (så Maven inte behöver ladda ner allt varje gång)
+      - name: Cache Maven dependencies
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.m2/repository
-            target/**  # Cachar även byggartefakter
-          key: maven-${{ hashFiles('**/pom.xml') }}-${{ github.run_id }}
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            maven-${{ hashFiles('**/pom.xml') }}
-        env:
-          MAVEN_OPTS: "-Dmaven.repo.local=$HOME/.m2/repository"
+            ${{ runner.os }}-maven-
 
-      # Steg 4: Förebyggande validering innan byggande
-      - name: "🔍 Pre-Flight Checks"
-        run: |
-          mvn validate
-          mvn dependency:tree validate
-          mvn checkstyle:check  # Om du använder Checkstyle
-
-      # Steg 5: Bygg med fail-safe och diagnostik
-      - name: "🏗 Safe Build & Test"
-        run: |
-          mvn clean install \
-            -Dmaven.test.failure.ignore=false \
-            -B -V -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
-        env:
-          BUILD_OPTS: "-Xms512m -Xmx2g"  # Minneshantering
-
-      # Steg 6: Automatisk artefakthantering
-      - name: "📦 Archive Build Artifacts"
-        if: success()
-        uses: actions/upload-artifact@v3
-        with:
-          name: build-output
-          path: |
-            target/*.jar
-            target/surefire-reports/
-
-      # Steg 7: Alltid köras - Post-mortem analys
-      - name: "🧐 Post-Build Analysis"
-        if: always()
-        run: |
-          echo "Byggstatus: ${{ job.status }}"
-          [ -f target/surefire-reports/TEST-*.xml ] && grep -L "<failure" target/surefire-reports/TEST-*.xml || echo "Inga testfel"
+      # Kör byggprocessen med Maven: clean (rensa gamla filer) + install (kompilera, köra tester, paketera)
+      # Flaggan -e visar fullständig felstacktrace vid fel
+      # Flaggan -X aktiverar debug-läge för mer detaljerad loggning
+      - name: Build and test with debug flags
+        run: mvn clean install -e -X
