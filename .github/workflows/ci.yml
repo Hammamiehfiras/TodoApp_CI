@@ -15,44 +15,44 @@ jobs:
 
     strategy:
       matrix:
-        java: [17, 21]  # Test with both Java 17 and 21
-      fail-fast: true  # Stop the matrix if one job fails
+        java: [17, 21]  # Test on Java 17 and Java 21
+      fail-fast: true
 
     steps:
-      # Step 1: Checkout the code
+      # Checkout code
       - name: Check out code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Java using matrix value
+      # Set up Java (Temurin distribution)
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v3
         with:
           java-version: ${{ matrix.java }}
-          distribution: 'temurin'
-          cache: maven
+          distribution: temurin
+          cache: maven  # Automatically caches ~/.m2/repository
 
-      # Step 3: Show Java and Maven versions
-      - name: Show environment versions
+      # Verify Java and Maven versions
+      - name: Show Java and Maven versions
         run: |
           java -version
           mvn -v
 
-      # Step 4: Build and run tests (cleanly split steps)
-      - name: Compile code and run unit tests
+      # Build and run tests with Maven
+      - name: Build and test
         run: mvn clean verify -B
 
-      # Step 5: Upload test reports
-      - name: Publish JUnit test results
-        if: always()  # Run even if previous step fails
-        uses: actions/upload-artifact@v3
+      # Upload JUnit test reports
+      - name: Upload JUnit test results
+        if: always()  # Upload even if tests fail
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: junit-test-results
           path: target/surefire-reports/
 
-      # Step 6: Optionally upload JAR or other output
-      - name: Upload built artifact
-        if: success()
-        uses: actions/upload-artifact@v3
+      # Upload the built JAR artifact
+      - name: Upload JAR artifact
+        if: success()  # Only upload if build/test succeeded
+        uses: actions/upload-artifact@v3.1.2
         with:
-          name: todoapp-artifact
+          name: todoapp-jar
           path: target/*.jar
